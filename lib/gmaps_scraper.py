@@ -2,17 +2,18 @@ import logging
 import re
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
 class GmapsScraper:
 
-    def __init__(self, user_agent='Chrome/103.0.5060.114', headless=True, implicit_wait=5):
+    def __init__(self, user_agent='Chrome/103.0.5060.114', headless=True, implicit_wait=5, explicit_wait=10):
         self.user_agent = user_agent
         self.headless = headless
         self.implicit_wait = implicit_wait
+        self.explicit_wait = explicit_wait
 
         self.options = webdriver.ChromeOptions()
         if self.headless:
@@ -43,13 +44,19 @@ class GmapsScraper:
 
     def scrape_hits(self):
         """Scrape search results for business types."""
-        WebDriverWait(self.browser, 10).until(EC.presence_of_element_located((By.XPATH, '//img[@alt="Directions"]')))
-        text = self.browser.find_element(By.XPATH, "/html/body").text
+        try:
+            WebDriverWait(self.browser, self.explicit_wait).until(
+                EC.presence_of_element_located((By.XPATH, '//img[@alt="Directions"]'))
+            )
+        except TimeoutException:
+            logging.warning('No results could be scraped within {} seconds'.format(self.explicit_wait))
         with open('../gmaps_types_en.txt', 'r') as f:
             types = f.read().splitlines()
-        type_counts = {}
-        for t in types:
-            type_counts[t] = len([m.start() for m in re.finditer(t, text)])
+        spans = self.browser.find_elements(By.TAG_NAME, 'span')
+        type_counts = dict(zip(types, [0]*len(types)))
+        for s in spans:
+            if s.text in types:
+                type_counts[s.text] += 1
         return type_counts
 
     def get_gmaps_type(self, name):
